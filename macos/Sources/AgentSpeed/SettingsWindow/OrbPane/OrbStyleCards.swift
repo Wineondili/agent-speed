@@ -71,19 +71,20 @@ struct OrbStyleCards: View {
         }
     }
 
-    /// The cards in one row, or 3 + 2 rows when narrow.
+    /// The cards in one row, or 3 + 3 rows when narrow. The background and foreground layers hold different content,
+    /// so their columns come from `EqualColumns`, which ignores content and puts both layers' cards in the same place.
     @ViewBuilder
     private func layout<Card: View>(@ViewBuilder _ card: @escaping (OrbStyleKind) -> Card) -> some View {
         if Self.fitsOneRow {
-            HStack(spacing: Self.spacing) {
+            EqualColumns(spacing: Self.spacing) {
                 ForEach(OrbStyleKind.allCases) { card($0) }
             }
         } else {
             VStack(spacing: Self.spacing) {
-                HStack(spacing: Self.spacing) {
+                EqualColumns(spacing: Self.spacing) {
                     ForEach(OrbStyleKind.allCases.prefix(3)) { card($0) }
                 }
-                HStack(spacing: Self.spacing) {
+                EqualColumns(spacing: Self.spacing) {
                     ForEach(OrbStyleKind.allCases.suffix(3)) { card($0) }
                 }
             }
@@ -146,6 +147,39 @@ struct OrbStyleCards: View {
         .buttonStyle(.plain)
         .accessibilityLabel(l10n("orbs.preview.a11y", l10n(style.titleKey)))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A row of equally wide columns that fills the proposed width, whatever its subviews would prefer. Two rows with the
+/// same width and count therefore place their subviews identically, unlike `HStack`, which sizes columns by content.
+struct EqualColumns: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let gaps = spacing * CGFloat(subviews.count - 1)
+        let width = proposal.width
+            ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max().map { $0 * CGFloat(subviews.count) + gaps }
+            ?? 0
+        let column = Self.column(width, gaps: gaps, count: subviews.count)
+        let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: column, height: proposal.height)).height }.max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let column = Self.column(bounds.width, gaps: spacing * CGFloat(subviews.count - 1), count: subviews.count)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(
+                at: CGPoint(x: bounds.minX + CGFloat(index) * (column + spacing), y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: column, height: bounds.height)
+            )
+        }
+    }
+
+    private static func column(_ width: CGFloat, gaps: CGFloat, count: Int) -> CGFloat {
+        max(0, (width - gaps) / CGFloat(count))
     }
 }
 
